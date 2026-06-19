@@ -44,11 +44,28 @@
   </PropertyGroup>
 
   <!--
-    Copy the native library next to the managed DLL *when it exists*, for every
-    platform we might be building on. The `Condition="Exists(...)"` guards ensure
-    the managed build still succeeds when the native library has not been compiled
-    yet (e.g. a fresh clone, or a docs-only build). The runtime DllImport resolver
-    in NativeMethods.cs then loads whichever file is present at run time.
+    Fail the build early if the native FFI library for the current platform has
+    not been built yet. The managed wrapper is useless without it, so a missing
+    library is a hard error rather than a build that silently throws at run time.
+    Build it first with build\build-native.bat, build/build-native.ps1, or
+    build/build-native.sh (each compiles the ifc-lite-ffi crate from the submodule).
+  -->
+  <Target Name="EnsureIfcLiteNativeLibrary" BeforeTargets="Build;Publish">
+    <PropertyGroup>
+      <_IfcLiteNativeFile Condition="$([MSBuild]::IsOSPlatform('Windows'))">ifc_lite_ffi.dll</_IfcLiteNativeFile>
+      <_IfcLiteNativeFile Condition="$([MSBuild]::IsOSPlatform('OSX'))">libifc_lite_ffi.dylib</_IfcLiteNativeFile>
+      <_IfcLiteNativeFile Condition="$([MSBuild]::IsOSPlatform('Linux'))">libifc_lite_ffi.so</_IfcLiteNativeFile>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(IfcLiteNativeDir)/$(_IfcLiteNativeFile)')"
+           Text="Native ifc-lite FFI library '$(_IfcLiteNativeFile)' was not found in '$(IfcLiteNativeDir)'. Build it first: build\build-native.bat (Windows), build/build-native.ps1, or build/build-native.sh — or pass -p:IfcLiteNativeDir=&lt;dir&gt; to point at a prebuilt library." />
+  </Target>
+
+  <!--
+    Copy the native library next to the managed DLL, for every platform we might
+    be building on. The file for the platform we are actually building is
+    guaranteed to exist by EnsureIfcLiteNativeLibrary above; the Exists() guards
+    simply skip the other platforms' files. The runtime DllImport resolver in
+    NativeMethods.cs then loads whichever file sits next to the assembly.
   -->
   <ItemGroup>
     <None Include="$(IfcLiteNativeDir)/ifc_lite_ffi.dll"

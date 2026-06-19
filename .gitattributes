@@ -1,0 +1,3 @@
+# Windows batch files must use CRLF line endings so cmd.exe parses multi-line
+# blocks (if/for) correctly regardless of how the repo is checked out.
+*.bat text eol=crlf

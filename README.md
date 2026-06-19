@@ -76,8 +76,13 @@ git submodule update --init --recursive
 
 Build the native ifc-lite library:
 
+```bat
+:: Windows (Command Prompt)
+build\build-native.bat
+```
+
 ```powershell
-# Windows
+# Windows (PowerShell)
 build\build-native.ps1
 ```
 
@@ -93,7 +98,9 @@ dotnet build IfcLiteImporter.sln -c Release
 ```
 
 The native library is copied next to the plug-in automatically, so the resulting
-`.rhp` is ready to load in Rhino 8.
+`.rhp` is ready to load in Rhino 8. If you forget to build it first, the managed
+build **fails fast with an error** that points you back at the `build-native`
+scripts (rather than producing a `.rhp` that throws at run time).
 
 ---
 
@@ -121,8 +128,9 @@ Two things make that work:
 
    If Rhino is installed somewhere else, edit `executablePath` to match.
 
-2. **Build the native library once** (`build\build-native.ps1`) so
-   `ifc_lite_ffi.dll` is copied next to the `.rhp`.
+2. **Build the native library once** (`build\build-native.bat` or
+   `build\build-native.ps1`) so `ifc_lite_ffi.dll` is copied next to the `.rhp`.
+   If you skip this, the build stops with an error telling you to run it.
 
 Then:
 

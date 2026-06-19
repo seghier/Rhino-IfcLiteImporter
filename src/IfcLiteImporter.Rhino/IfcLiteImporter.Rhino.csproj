@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    IfcLiteImporter.Rhino — the Rhino 8 plug-in (.rhp).
+
+    This project contains the user-facing layer: the plug-in entry point, the
+    Rhino commands, the Eto.Forms import dialog, and the import orchestration
+    that turns the typed meshes from IfcLite.Net into RhinoDoc objects.
+
+    It targets net7.0 because Rhino 8 hosts the .NET 7 runtime. RhinoCommon and
+    Eto.Forms are supplied by Rhino at run time, so we reference them only for
+    compilation (ExcludeAssets="runtime") and never copy them into our output.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Rhino 8 plug-ins are loaded into a collectible AssemblyLoadContext. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <!-- A Rhino plug-in is a .dll renamed to .rhp. -->
+    <TargetExt>.rhp</TargetExt>
+
+    <!--
+      NU1701: RhinoCommon/Eto are restored as .NET Framework packages but are
+      perfectly usable from .NET 7 inside Rhino. Suppress the "may not be fully
+      compatible" restore warning so the build stays clean.
+    -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+
+    <!-- Package / assembly identity (this is a public MIT-licensed example). -->
+    <AssemblyName>IfcLiteImporter.Rhino</AssemblyName>
+    <RootNamespace>IfcLiteImporter.Rhino</RootNamespace>
+    <Description>Rhino 8 plug-in that imports IFC files via the ifc-lite library.</Description>
+    <Authors>LINK Arkitektur</Authors>
+    <Company>LINK Arkitektur</Company>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      RhinoCommon is the public Rhino API. ExcludeAssets="runtime" means we
+      compile against it but do NOT copy RhinoCommon.dll to our output — Rhino
+      already has it loaded.
+    -->
+    <PackageReference Include="RhinoCommon" Version="8.*" ExcludeAssets="runtime" />
+    <!-- Eto.Forms is the cross-platform UI toolkit Rhino ships and hosts. -->
+    <PackageReference Include="Eto.Forms" Version="2.8.*" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The managed wrapper around the native ifc-lite parser. -->
+    <ProjectReference Include="..\IfcLite.Net\IfcLite.Net.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The LINK Arkitektur logo shown in the import dialog header. The real PNG is
+      dropped in by the build/orchestration step; the UI loads it defensively and
+      simply shows nothing if the resource is absent (see ImportWindow.cs).
+      Condition="Exists(...)" keeps the build green when the file is not present yet.
+    -->
+    <EmbeddedResource Include="Resources\link-logo.png"
+                      LogicalName="IfcLiteImporter.Rhino.Resources.link-logo.png"
+                      Condition="Exists('Resources\link-logo.png')" />
+  </ItemGroup>
+
+</Project>

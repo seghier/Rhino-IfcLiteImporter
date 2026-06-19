@@ -1,0 +1,43 @@
+# Rhino Yak package manifest.
+#
+# Yak packages the *folder* that contains this manifest.yml: when you run
+# `yak build` from the directory holding this file, every sibling file in that
+# directory (the compiled .rhp, IfcLite.Net.dll, the native ifc_lite_ffi
+# library, the icon, ...) is zipped up into a single `<name>-<version>-<platform>.yak`
+# archive. The release workflow therefore stages the build output next to a copy
+# of this manifest before invoking `yak build`.
+#
+# Manifest spec: https://developer.rhino3d.com/guides/yak/the-anatomy-of-a-package/
+
+# Package identifier on the Rhino package server. Must be lowercase and may only
+# contain letters, numbers, hyphens and underscores.
+name: ifcliteimporter
+
+# Semantic version of the package (SemVer). Keep this in sync with the plug-in
+# assembly version and the Release workflow input.
+version: 0.1.0
+
+# Package authors (shown in the Package Manager).
+authors:
+  - LINK Arkitektur
+
+# Short, human-readable summary shown in Rhino's Package Manager.
+description: >
+  Example Rhino 8 plug-in that imports IFC models into Rhino using the ifc-lite
+  native library. It bakes IFC element properties as Rhino user strings and can
+  read either shared or project coordinates.
+
+# Project home page.
+url: https://github.com/linkarkitektur/Rhino-IfcLiteImporter
+
+# Search keywords for the Package Manager.
+keywords:
+  - ifc
+  - bim
+  - import
+  - ifclite
+  - openbim
+
+# Package icon. This file must be present in the package folder when `yak build`
+# runs (the release workflow copies the logo in alongside this manifest).
+icon: link-logo.png

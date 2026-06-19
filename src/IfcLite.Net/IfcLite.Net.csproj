@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    IfcLite.Net — a standalone managed (.NET) wrapper around the native
+    `ifc_lite_ffi` library produced by the Rust `ifc-lite` project.
+
+    It P/Invokes the native C ABI, deserializes the JSON the parser returns, and
+    exposes a small, typed, immutable object model. It deliberately has NO
+    RhinoCommon dependency so it can be reused outside of Rhino (tests, tools, CI).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- The P/Invoke layer uses `byte**` out-parameters, which requires unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Emit the XML documentation file so consumers get IntelliSense for the public API. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!--
+      CA2255: we intentionally use a [ModuleInitializer] to register the native
+      library DllImport resolver before the first P/Invoke. That is exactly the
+      right tool here, so silence the "not intended for libraries" advisory.
+    -->
+    <NoWarn>$(NoWarn);CA2255</NoWarn>
+
+    <!-- Package / assembly identity (this is a public MIT-licensed example). -->
+    <AssemblyName>IfcLite.Net</AssemblyName>
+    <RootNamespace>IfcLite.Net</RootNamespace>
+    <Description>Managed .NET wrapper for the native ifc-lite FFI library (IFC parsing to typed meshes).</Description>
+    <Authors>LINK Arkitektur</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <!--
+    Location of the compiled native library. Override on the command line with
+    `-p:IfcLiteNativeDir=...` (e.g. in CI) if you build the Rust crate elsewhere.
+    The default points at the standard cargo "server-release" profile
+    output relative to this project (../../ reaches the repository root).
+  -->
+  <PropertyGroup>
+    <IfcLiteNativeDir Condition="'$(IfcLiteNativeDir)'==''">$(MSBuildProjectDirectory)/../../external/ifc-lite/target/server-release</IfcLiteNativeDir>
+  </PropertyGroup>
+
+  <!--
+    Copy the native library next to the managed DLL *when it exists*, for every
+    platform we might be building on. The `Condition="Exists(...)"` guards ensure
+    the managed build still succeeds when the native library has not been compiled
+    yet (e.g. a fresh clone, or a docs-only build). The runtime DllImport resolver
+    in NativeMethods.cs then loads whichever file is present at run time.
+  -->
+  <ItemGroup>
+    <None Include="$(IfcLiteNativeDir)/ifc_lite_ffi.dll"
+          Condition="Exists('$(IfcLiteNativeDir)/ifc_lite_ffi.dll')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="ifc_lite_ffi.dll"
+          Visible="false" />
+    <None Include="$(IfcLiteNativeDir)/libifc_lite_ffi.so"
+          Condition="Exists('$(IfcLiteNativeDir)/libifc_lite_ffi.so')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libifc_lite_ffi.so"
+          Visible="false" />
+    <None Include="$(IfcLiteNativeDir)/libifc_lite_ffi.dylib"
+          Condition="Exists('$(IfcLiteNativeDir)/libifc_lite_ffi.dylib')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libifc_lite_ffi.dylib"
+          Visible="false" />
+  </ItemGroup>
+
+</Project>

@@ -97,6 +97,49 @@ The native library is copied next to the plug-in automatically, so the resulting
 
 ---
 
+## Debugging in Visual Studio
+
+Pressing **F5** builds the plug-in and launches Rhino with the debugger attached.
+Two things make that work:
+
+1. **Set `IfcLiteImporter.Rhino` as the startup project.** It is a class library
+   that compiles to a `.rhp`, so trying to "run" a plain library (either this
+   project or `IfcLite.Net`) gives *"cannot run a library type project"*. The
+   plug-in ships a launch profile (`Properties/launchSettings.json`) that starts
+   Rhino instead of trying to run the DLL:
+
+   ```json
+   {
+     "profiles": {
+       "Rhino 8": {
+         "commandName": "Executable",
+         "executablePath": "C:\\Program Files\\Rhino 8\\System\\Rhino.exe"
+       }
+     }
+   }
+   ```
+
+   If Rhino is installed somewhere else, edit `executablePath` to match.
+
+2. **Build the native library once** (`build\build-native.ps1`) so
+   `ifc_lite_ffi.dll` is copied next to the `.rhp`.
+
+Then:
+
+- Press **F5** — Rhino 8 starts under the debugger.
+- **The first time only**, point Rhino at the freshly built plug-in: run the
+  `PluginManager` command → **Install**, and pick
+  `src\IfcLiteImporter.Rhino\bin\Debug\net7.0\IfcLiteImporter.Rhino.rhp`
+  (or drag that `.rhp` onto the Rhino window). Rhino remembers the path, so every
+  later F5 rebuilds it in place and reloads it automatically.
+- Run `IfcLiteImporter` and set breakpoints (e.g. in `RunCommand`, `ImportWindow`
+  or `IfcImportService`) — they bind once Rhino loads the plug-in.
+
+> Keep the project a class library — a `.rhp` *is* a .NET library. The launch
+> profile, not `OutputType`, is what makes it debuggable.
+
+---
+
 ## Install
 
 Grab a prebuilt package from the [GitHub Releases](https://github.com/linkarkitektur/Rhino-IfcLiteImporter/releases)

@@ -76,3 +76,4 @@ installer/Output/
 
 # yak CLI downloaded during packaging.
 yak.exe
+/.vs

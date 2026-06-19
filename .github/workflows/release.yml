@@ -1,0 +1,138 @@
+# Release workflow for the IfcLite Importer Rhino plug-in.
+#
+# This is triggered MANUALLY from the GitHub "Actions" tab. It builds the native
+# ifc-lite FFI library from the submodule, builds the managed .NET projects,
+# packages everything into a Rhino Yak (.yak) archive, wraps that in an Inno
+# Setup installer, and publishes both artifacts to a GitHub Release.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (SemVer, e.g. 0.1.0). Used for the tag, Yak version and installer."
+        type: string
+        required: true
+        default: "0.1.0"
+
+# The release step needs to create tags/releases and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    # Rhino plug-ins (and the native Windows .dll + yak.exe) are Windows-only.
+    runs-on: windows-latest
+
+    steps:
+      # 1) Check out the repo *with* the ifc-lite submodule so we can build it.
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # 2) Install a stable Rust toolchain to compile the native FFI crate.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 3) Build the native ifc-lite FFI library.
+      #    Output (Windows): external/ifc-lite/target/server-release/ifc_lite_ffi.dll
+      - name: Build native ifc-lite FFI
+        working-directory: external/ifc-lite
+        run: cargo build --profile server-release -p ifc-lite-ffi
+
+      # 4) Install the .NET SDK. The 8.0 SDK can target net7.0 and will restore
+      #    the net7.0 targeting pack automatically.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # 5) Build the managed solution in Release. The IfcLite.Net project copies
+      #    the native .dll next to its output; the Rhino project produces the .rhp.
+      - name: Build solution
+        run: dotnet build IfcLiteImporter.sln -c Release
+
+      # 6) Stage the Yak package folder and build the .yak.
+      #    We gather every file Yak needs into dist/pkg, drop a copy of the
+      #    manifest and the icon in, download the yak CLI, and run `yak build`.
+      - name: Build Yak package
+        id: yak
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Create a clean staging folder.
+          $pkg = "dist/pkg"
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+
+          # --- Collect the build outputs -------------------------------------
+          # The compiled Rhino plug-in (.rhp).
+          $rhp = Get-ChildItem -Recurse -Path "src/IfcLiteImporter.Rhino/bin/Release" -Filter "IfcLiteImporter.Rhino.rhp" |
+                 Select-Object -First 1
+          if (-not $rhp) { throw "Could not find the built .rhp under src/IfcLiteImporter.Rhino/bin/Release" }
+          Copy-Item $rhp.FullName -Destination $pkg
+
+          # The managed wrapper DLL (sits next to the .rhp in the plug-in output).
+          $netDll = Join-Path $rhp.DirectoryName "IfcLite.Net.dll"
+          Copy-Item $netDll -Destination $pkg
+
+          # The native FFI library produced by cargo.
+          $nativeDll = "external/ifc-lite/target/server-release/ifc_lite_ffi.dll"
+          if (-not (Test-Path $nativeDll)) { throw "Native library not found at $nativeDll" }
+          Copy-Item $nativeDll -Destination $pkg
+
+          # The Yak manifest and the package icon.
+          Copy-Item "build/manifest.yml" -Destination $pkg
+          Copy-Item "src/IfcLiteImporter.Rhino/Resources/link-logo.png" -Destination $pkg
+
+          # --- Download the yak CLI ------------------------------------------
+          Invoke-WebRequest "https://files.mcneel.com/yak/tools/latest/yak.exe" -OutFile "yak.exe"
+          # Keep a copy inside the package folder so the installer can bundle it.
+          Copy-Item "yak.exe" -Destination $pkg
+
+          # --- Build the .yak ------------------------------------------------
+          # `yak build` zips up the folder it is run from (the one with manifest.yml).
+          $yakExe = (Resolve-Path "yak.exe").Path
+          Push-Location $pkg
+          & $yakExe build
+          Pop-Location
+
+          # Locate the produced .yak and expose its path to later steps.
+          $yak = Get-ChildItem -Path $pkg -Filter "*.yak" | Select-Object -First 1
+          if (-not $yak) { throw "yak build did not produce a .yak file" }
+          "yak_path=$($yak.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Built package: $($yak.FullName)"
+
+      # 7) Install Inno Setup, then compile the installer around the .yak.
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Install the Inno Setup compiler (provides ISCC.exe).
+          choco install innosetup -y
+
+          # ISCC.exe lives under Program Files (x86) after a Chocolatey install.
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+
+          # Compile, passing the version and the absolute path to the built .yak.
+          & $iscc "installer/IfcLiteImporter.iss" `
+            "/DAppVersion=${{ inputs.version }}" `
+            "/DYakFile=${{ steps.yak.outputs.yak_path }}"
+
+          if (-not (Test-Path "installer/Output/IfcLiteImporter-Setup.exe")) {
+            throw "Installer was not produced at installer/Output/IfcLiteImporter-Setup.exe"
+          }
+
+      # 8) Publish the .yak and the installer .exe to a GitHub Release.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: IfcLite Importer v${{ inputs.version }}
+          # Glob the .yak (its exact name includes the platform suffix) and the installer.
+          files: |
+            dist/pkg/*.yak
+            installer/Output/IfcLiteImporter-Setup.exe

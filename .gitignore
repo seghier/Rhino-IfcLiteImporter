@@ -55,3 +55,24 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# --- IfcLiteImporter-specific ---------------------------------------------
+
+# Compiled native ifc-lite FFI library (built from the submodule via cargo).
+external/ifc-lite/target/
+
+# .NET build output (more specific catch-all alongside the patterns above).
+**/bin/
+**/obj/
+
+# Staging area used by the Release workflow to assemble the Yak package.
+dist/
+
+# Built Yak packages.
+*.yak
+
+# Inno Setup installer output.
+installer/Output/
+
+# yak CLI downloaded during packaging.
+yak.exe

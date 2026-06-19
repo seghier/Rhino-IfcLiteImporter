@@ -1,0 +1,33 @@
+Rhino IfcLite Importer
+Copyright (c) 2026 LINK Arkitektur
+
+This product is licensed under the MIT License (see the LICENSE file).
+
+================================================================================
+Third-party software
+================================================================================
+
+This product bundles and builds upon the following third-party software:
+
+ifc-lite
+--------
+  Author:     LTplus-AG
+  Homepage:   https://github.com/LTplus-AG/ifc-lite
+  License:    Mozilla Public License 2.0 (MPL-2.0)
+
+  ifc-lite is included as a git submodule under `external/ifc-lite`. The native
+  library distributed with this plug-in (`ifc_lite_ffi`, e.g. ifc_lite_ffi.dll)
+  is compiled from that submodule's source. The source for the ifc-lite library
+  is available at the homepage above, and a copy is present in the submodule.
+
+  The MPL-2.0 is a file-level copyleft license: the ifc-lite source files remain
+  under the MPL-2.0, while this repository's own source remains under the MIT
+  License.
+
+================================================================================
+Trademarks / brand assets
+================================================================================
+
+The "LINK Arkitektur" name and the LINK Arkitektur logo (e.g. link-logo.png) are
+brand assets of LINK Arkitektur. They are included only to identify the origin of
+this example and are not covered by the MIT License grant.

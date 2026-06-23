@@ -40,23 +40,25 @@ A native Grasshopper component (**IFC Import**) is included, which allows readin
 
 The plug-in is a thin Rhino-facing and Grasshopper-facing layer on top of the native ifc-lite parser.
 The data flows in one direction:
-external/ifc-lite (git submodule, Rust, MPL-2.0)
-│
-│ cargo build --profile server-release -p ifc-lite-ffi
-▼
-ifc_lite_ffi (native library, e.g. ifc_lite_ffi.dll)
-│
-│ P/Invoke + JSON deserialization
-▼
-IfcLite.Net (managed wrapper — typed meshes + metadata, no Rhino dependency)
-│
-├── build meshes, bake user strings, join by properties
-│ ▼
-├── IfcLiteImporter.Rhino (Rhino 8 plug-in / .rhp — adds objects to the document)
-│
-└── IfcLiteImporter.Grasshopper (Grasshopper plug-in / .gha — outputs geometry and data)
-code
-Code
+
+```
+external/ifc-lite  (git submodule, Rust, MPL-2.0)
+        │
+        │  cargo build --profile server-release -p ifc-lite-ffi
+        ▼
+ifc_lite_ffi  (native library, e.g. ifc_lite_ffi.dll)
+        │
+        │  P/Invoke + JSON deserialization
+        ▼
+IfcLite.Net  (managed wrapper — typed meshes + metadata, no Rhino dependency)
+        │
+        ├── build meshes, bake user strings, join by properties
+        │   ▼
+        ├── IfcLiteImporter.Rhino  (Rhino 8 plug-in / .rhp — adds objects to the document)
+        │
+        └── IfcLiteImporter.Grasshopper  (Grasshopper plug-in / .gha — outputs geometry and data)
+```
+
 1. **`external/ifc-lite`** is included as a git submodule. Building its FFI crate
    (`cargo build --profile server-release -p ifc-lite-ffi`) produces the native
    **`ifc_lite_ffi`** library.
@@ -79,71 +81,105 @@ cd Rhino-IfcLiteImporter
 
 # (If you already cloned without --recursive:)
 git submodule update --init --recursive
+```
+
 Build the native ifc-lite library:
-code
-Bat
+
+```bat
 :: Windows (Command Prompt)
 build\build-native.bat
-code
-Powershell
+```
+
+```powershell
 # Windows (PowerShell)
 build\build-native.ps1
-code
-Bash
+```
+
+```bash
 # macOS / Linux
 build/build-native.sh
+```
+
 Then build the managed solution:
-code
-Bash
+
+```bash
 dotnet build IfcLiteImporter.sln -c Release
+```
+
 The native library is copied next to the plug-in automatically, so the resulting
-.rhp and .gha files are ready to load in Rhino 8. If you forget to build the native library first, the managed build fails with an error pointing you back to the build-native scripts.
-Debugging in Visual Studio
-Pressing F5 builds the plug-in and launches Rhino with the debugger attached.
-Set IfcLiteImporter.Rhino as the startup project. It is a class library
-that compiles to a .rhp, so trying to "run" a plain library gives "cannot run a library type project". The plug-in ships a launch profile (Properties/launchSettings.json) that starts Rhino instead of trying to run the DLL:
-code
-JSON
-{
-  "profiles": {
-    "Rhino 8": {
-      "commandName": "Executable",
-      "executablePath": "C:\\Program Files\\Rhino 8\\System\\Rhino.exe"
-    }
-  }
-}
-If Rhino is installed somewhere else, edit executablePath to match.
-Build the native library once (build\build-native.bat or
-build\build-native.ps1) so ifc_lite_ffi.dll is copied next to the .rhp.
+`.rhp` and `.gha` files are ready to load in Rhino 8. If you forget to build the native library first, the managed build **fails with an error** pointing you back to the `build-native` scripts.
+
+---
+
+## Debugging in Visual Studio
+
+Pressing **F5** builds the plug-in and launches Rhino with the debugger attached.
+
+1. **Set `IfcLiteImporter.Rhino` as the startup project.** It is a class library
+   that compiles to a `.rhp`, so trying to "run" a plain library gives *"cannot run a library type project"*. The plug-in ships a launch profile (`Properties/launchSettings.json`) that starts Rhino instead of trying to run the DLL:
+
+   ```json
+   {
+     "profiles": {
+       "Rhino 8": {
+         "commandName": "Executable",
+         "executablePath": "C:\\Program Files\\Rhino 8\\System\\Rhino.exe"
+       }
+     }
+   }
+   ```
+
+   If Rhino is installed somewhere else, edit `executablePath` to match.
+
+2. **Build the native library once** (`build\build-native.bat` or
+   `build\build-native.ps1`) so `ifc_lite_ffi.dll` is copied next to the `.rhp`.
+
 Then:
-Press F5 — Rhino 8 starts under the debugger.
-The first time only, point Rhino at the freshly built plug-in: run the
-PluginManager command → Install, and pick
-src\IfcLiteImporter.Rhino\bin\Debug\net8.0\IfcLiteImporter.Rhino.rhp
-(or drag that .rhp onto the Rhino window). Rhino remembers the path, so every
-later F5 rebuilds it in place and reloads it automatically.
-To use the Grasshopper component, it is automatically deployed to your %APPDATA%\Grasshopper\Libraries directory upon compilation.
-Run IfcLiteImporter in Rhino, or open Grasshopper and set breakpoints in the code — they bind once Rhino loads the plug-in assemblies.
-Install
-Grab a prebuilt package from the GitHub Releases page. You can either:
-download the .yak and drag it onto an open Rhino 8 window, or use the
-Package Manager (PackageManager command, search for ifcliteimporter); or
-download IfcLiteImporter-Setup.exe and run the installer, which calls
-Rhino's yak to install the package for you.
-Usage
-In Rhino (Plug-in)
-Run the IfcLiteImporter command in Rhino 8.
-Pick an .ifc file.
-Choose Shared or Project coordinates.
-Click Import.
-For scripting or batch jobs, use IfcLiteImport to import a file headlessly (without opening the window).
-In Grasshopper
-Open Grasshopper inside Rhino 8.
-Go to the IfcLite tab and drag the IFC Import component onto the canvas.
-Connect the file path and configure your desired coordinate, coplanar-merging, and joining settings.
-Licensing
-This repository (the importer plug-in, Grasshopper component, and IfcLite.Net wrapper) is licensed under the MIT License — see LICENSE.
-The bundled ifc-lite submodule is licensed under the MPL-2.0. Its native
-library is built from source from the submodule; see NOTICE for
-attribution details.
+
+- Press **F5** — Rhino 8 starts under the debugger.
+- **The first time only**, point Rhino at the freshly built plug-in: run the
+  `PluginManager` command → **Install**, and pick
+  `src\IfcLiteImporter.Rhino\bin\Debug\net8.0\IfcLiteImporter.Rhino.rhp`
+  (or drag that `.rhp` onto the Rhino window). Rhino remembers the path, so every
+  later F5 rebuilds it in place and reloads it automatically.
+- To use the Grasshopper component, it is automatically deployed to your `%APPDATA%\Grasshopper\Libraries` directory upon compilation.
+- Run `IfcLiteImporter` in Rhino, or open Grasshopper and set breakpoints in the code — they bind once Rhino loads the plug-in assemblies.
+
+---
+
+## Install
+
+Grab a prebuilt package from the [GitHub Releases](https://github.com/linkarkitektur/Rhino-IfcLiteImporter/releases) page. You can either:
+
+- download the **`.yak`** and **drag it onto an open Rhino 8 window**, or use the
+  **Package Manager** (`PackageManager` command, search for `ifcliteimporter`); or
+- download **`IfcLiteImporter-Setup.exe`** and run the installer, which calls
+  Rhino's `yak` to install the package for you.
+
+---
+
+## Usage
+
+### In Rhino (Plug-in)
+1. Run the **`IfcLiteImporter`** command in Rhino 8.
+2. Pick an `.ifc` file.
+3. Choose **Shared** or **Project** coordinates.
+4. Click **Import**.
+
+For scripting or batch jobs, use **`IfcLiteImport`** to import a file headlessly (without opening the window).
+
+### In Grasshopper
+1. Open Grasshopper inside Rhino 8.
+2. Go to the **IfcLite** tab and drag the **IFC Import** component onto the canvas.
+3. Connect the file path and configure your desired coordinate, coplanar-merging, and joining settings.
+
+---
+
+## Licensing
+
+- This repository (the importer plug-in, Grasshopper component, and `IfcLite.Net` wrapper) is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
+- The bundled **ifc-lite** submodule is licensed under the **MPL-2.0**. Its native
+  library is built from source from the submodule; see [`NOTICE`](NOTICE) for
+  attribution details.
+
 The LINK Arkitektur name and logo are brand assets of LINK Arkitektur.

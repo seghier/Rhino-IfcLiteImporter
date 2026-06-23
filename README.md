@@ -20,10 +20,10 @@ property baking, coordinate selection, and smart caching.
 
 ### Geometry & Document Organization
 - **File-Based Layer Structure:** Instead of placing all imported objects under a generic parent layer, they are organized under a root layer dynamically named after the source file, keeping your layer panel clean.
-- **Simplified Mesh Faces (Coplanar Merging):** Adjacent flat surfaces (like walls, roofs, and slabs) are automatically merged into single flat faces (n-gons). This reduces face counts and keeps files lighter while keeping flat shading and material colors intact.
+- **Simplified Mesh Faces (Coplanar Merging):** Adjacent flat surfaces (like walls, roofs, and slabs) are automatically simplified into single flat faces (n-gons). This reduces face counts and keeps files lighter while keeping flat shading and material colors intact.
 - **Bakes IFC Element Properties:** Identity attributes and custom properties are baked directly onto the Rhino objects as **user strings** so that the BIM data travels with the geometry.
 - **Joins Objects by Identical Properties:** Merges meshes that share the same properties into a single Rhino object, keeping the document tidy instead of producing thousands of tiny fragments.
-- **Shared vs Project Coordinates:** Choose betweensite-local (Project) coordinates or real-world (Shared) coordinates via the `IfcSite` placement transform.
+- **Shared vs Project Coordinates:** Choose between site-local (Project) coordinates or real-world (Shared) coordinates via the `IfcSite` placement transform.
 
 ### Grasshopper Support (`.gha`)
 A native Grasshopper component (**IFC Import**) is included, which allows reading IFC files directly inside your definitions:
@@ -147,6 +147,3 @@ The bundled ifc-lite submodule is licensed under the MPL-2.0. Its native
 library is built from source from the submodule; see NOTICE for
 attribution details.
 The LINK Arkitektur name and logo are brand assets of LINK Arkitektur.
-code
-Code
-***

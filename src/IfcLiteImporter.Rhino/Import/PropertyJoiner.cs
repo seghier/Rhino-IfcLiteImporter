@@ -57,7 +57,7 @@ namespace IfcLiteImporter.Rhino.Import
         /// </param>
         /// <param name="ct">Cancellation token, checked while merging.</param>
         /// <returns>The list of objects to add to the document.</returns>
-        internal static IReadOnlyList<JoinedObject> Join(
+        public static IReadOnlyList<JoinedObject> Join(
             IReadOnlyList<BuiltMesh> built,
             bool joinByProperties,
             CancellationToken ct)
@@ -171,25 +171,28 @@ namespace IfcLiteImporter.Rhino.Import
 
     /// <summary>
     /// Helpers for placing imported objects onto a tidy, per-type layer structure:
-    /// a single root "IFC" layer with one child layer per IFC type.
+    /// a single root layer (named after the file) with one child layer per IFC type.
     /// </summary>
     public static class LayerHelper
     {
-        /// <summary>The name of the parent layer all imported IFC layers live under.</summary>
-        public const string RootLayerName = "IFC";
+        /// <summary>The fallback parent layer name if none is provided.</summary>
+        public const string DefaultRootLayerName = "IFC";
 
         /// <summary>
         /// Returns the index of the layer for <paramref name="ifcType"/> (e.g.
-        /// "IfcWall"), creating it — and the parent "IFC" layer — if necessary.
+        /// "IfcWall"), creating it — and the parent root layer — if necessary.
         /// </summary>
         /// <remarks>Must be called on the Rhino UI thread (it mutates the layer table).</remarks>
-        public static int GetOrCreateIfcTypeLayer(RhinoDoc doc, string ifcType)
+        public static int GetOrCreateIfcTypeLayer(RhinoDoc doc, string ifcType, string rootLayerName = DefaultRootLayerName)
         {
             if (doc is null) throw new ArgumentNullException(nameof(doc));
             if (string.IsNullOrWhiteSpace(ifcType))
                 ifcType = "IfcProduct";
 
-            int rootIndex = GetOrCreateRootLayer(doc);
+            if (string.IsNullOrWhiteSpace(rootLayerName))
+                rootLayerName = DefaultRootLayerName;
+
+            int rootIndex = GetOrCreateRootLayer(doc, rootLayerName);
 
             // Look for an existing child layer with this name under the root.
             Layer? parent = doc.Layers.FindIndex(rootIndex);
@@ -220,22 +223,22 @@ namespace IfcLiteImporter.Rhino.Import
         }
 
         /// <summary>
-        /// Returns the index of the root "IFC" layer, creating it if needed.
+        /// Returns the index of the root layer, creating it if needed.
         /// </summary>
-        private static int GetOrCreateRootLayer(RhinoDoc doc)
+        private static int GetOrCreateRootLayer(RhinoDoc doc, string rootLayerName)
         {
             // A top-level layer has no parent (Guid.Empty).
             foreach (Layer layer in doc.Layers)
             {
                 if (!layer.IsDeleted &&
                     layer.ParentLayerId == Guid.Empty &&
-                    string.Equals(layer.Name, RootLayerName, StringComparison.Ordinal))
+                    string.Equals(layer.Name, rootLayerName, StringComparison.Ordinal))
                 {
                     return layer.Index;
                 }
             }
 
-            var root = new Layer { Name = RootLayerName };
+            var root = new Layer { Name = rootLayerName };
             int index = doc.Layers.Add(root);
             return index >= 0 ? index : doc.Layers.CurrentLayerIndex;
         }

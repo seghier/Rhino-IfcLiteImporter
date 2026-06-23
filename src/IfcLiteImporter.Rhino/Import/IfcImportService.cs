@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using IfcLite.Net;
 using Rhino;
@@ -49,6 +50,12 @@ namespace IfcLiteImporter.Rhino.Import
         /// merged into a single Rhino object to keep the document tidy and light.
         /// </summary>
         public bool JoinByProperties { get; set; } = true;
+
+        /// <summary>
+        /// When <c>true</c> (default), adjacent coplanar faces are merged into single 
+        /// n-gons using the document's absolute and angle tolerances.
+        /// </summary>
+        public bool MergeCoplanarFaces { get; set; } = true;
     }
 
     /// <summary>
@@ -82,34 +89,11 @@ namespace IfcLiteImporter.Rhino.Import
     /// Orchestrates a full IFC import: parse → build Rhino meshes → group/join →
     /// add to the document.
     /// </summary>
-    /// <remarks>
-    /// <para><b>Threading model.</b> This service is designed to be called from a
-    /// background thread (so the UI stays responsive), but Rhino document mutation
-    /// is NOT thread-safe and must happen on Rhino's main UI thread.</para>
-    /// <para>To satisfy both constraints, the expensive, thread-safe work — parsing
-    /// the file and converting meshes — runs inline on whatever thread calls
-    /// <see cref="Import"/>. The only document mutation (creating layers and adding
-    /// objects) is wrapped in a single delegate and marshalled onto the UI thread
-    /// via <see cref="RhinoApp.InvokeOnUiThread(Delegate, object[])"/>. We block
-    /// until that delegate finishes so the returned <see cref="ImportResult"/> is
-    /// accurate and any document errors surface to the caller.</para>
-    /// <para>If the caller is already on the UI thread (e.g. the synchronous
-    /// <c>IfcLiteImport</c> command), <see cref="RhinoApp.InvokeOnUiThread"/> simply
-    /// runs the delegate immediately, so the same code path is safe in both cases.</para>
-    /// </remarks>
     public sealed class IfcImportService
     {
         /// <summary>
         /// Runs the import end to end.
         /// </summary>
-        /// <param name="doc">The target Rhino document.</param>
-        /// <param name="ifcPath">Absolute path to the <c>.ifc</c> file.</param>
-        /// <param name="options">User options (coordinate mode, opening filter, join).</param>
-        /// <param name="progress">Optional progress sink; may be <c>null</c>.</param>
-        /// <param name="ct">Cancellation token, honoured between stages and per mesh.</param>
-        /// <returns>A summary of what was imported.</returns>
-        /// <exception cref="OperationCanceledException">If <paramref name="ct"/> is cancelled.</exception>
-        /// <exception cref="IfcLiteException">If the native parser fails.</exception>
         public ImportResult Import(
             RhinoDoc doc,
             string ifcPath,
@@ -134,16 +118,15 @@ namespace IfcLiteImporter.Rhino.Import
             progress?.Report(new ImportProgress(
                 5, $"Parsed {meshes.Count} meshes ({schema}). Building geometry…"));
 
-            // For "Shared" coordinates we apply the IfcSite placement so geometry
-            // lands at its real-world position. The model already returns meshes in
-            // site-local space, so "Project" needs no transform.
             double[]? siteTransform = model.SiteTransform;
 
             // ---- Stage 2: build Rhino meshes (background-safe) -------------------
-            // We pair each built mesh with its source IfcMesh so the join/bake steps
-            // can read the original metadata.
             var built = new List<BuiltMesh>(meshes.Count);
             var meshBuilder = new RhinoMeshBuilder();
+
+            // Read the tolerances needed for the coplanar merge operation
+            double absTol = doc.ModelAbsoluteTolerance;
+            double angleTol = doc.ModelAngleToleranceRadians;
 
             for (int i = 0; i < meshes.Count; i++)
             {
@@ -152,13 +135,41 @@ namespace IfcLiteImporter.Rhino.Import
 
                 Mesh? rhinoMesh = meshBuilder.Build(src, doc, options.CoordinateMode, siteTransform);
                 if (rhinoMesh is not null && rhinoMesh.Faces.Count > 0)
+                {
+                    if (options.MergeCoplanarFaces)
+                    {
+                        // Fix Bug 1: Weld coincident vertices of the triangle soup 
+                        // to establish shared topological edges within the individual component mesh.
+                        rhinoMesh.Vertices.CombineIdentical(true, true);
+                        rhinoMesh.Weld(angleTol);
+
+                        // Fix Bug 2: Explicitly populate the FaceNormals collection 
+                        // so MergeAllCoplanarFaces can verify coplanarity.
+                        rhinoMesh.FaceNormals.ComputeFaceNormals();
+
+                        // Run the coplanar merge on the isolated component
+                        rhinoMesh.MergeAllCoplanarFaces(absTol, angleTol);
+
+                        // Fix Color Loss: Re-apply the vertex colors based on the new, reduced vertex count.
+                        float[] color = src.Color;
+                        if (color is { Length: >= 3 })
+                        {
+                            System.Drawing.Color c = FloatColorToArgb(color);
+                            rhinoMesh.VertexColors.Clear();
+                            for (int v = 0; v < rhinoMesh.Vertices.Count; v++)
+                            {
+                                rhinoMesh.VertexColors.Add(c);
+                            }
+                        }
+                    }
+
                     built.Add(new BuiltMesh(rhinoMesh, src));
+                }
 
                 // Reserve the 5..85 band for geometry conversion progress.
                 if (meshes.Count > 0)
                 {
                     int pct = 5 + (int)(80L * (i + 1) / meshes.Count);
-                    // Only report occasionally to avoid flooding the UI thread.
                     if (i % 25 == 0 || i == meshes.Count - 1)
                         progress?.Report(new ImportProgress(pct, $"Building geometry {i + 1}/{meshes.Count}…"));
                 }
@@ -173,27 +184,25 @@ namespace IfcLiteImporter.Rhino.Import
             progress?.Report(new ImportProgress(92, $"Adding {joined.Count} objects to the document…"));
             ct.ThrowIfCancellationRequested();
 
+            string rootLayerName = Path.GetFileNameWithoutExtension(ifcPath);
+            if (string.IsNullOrWhiteSpace(rootLayerName))
+                rootLayerName = LayerHelper.DefaultRootLayerName;
+
             int objectCount = 0;
             Exception? docError = null;
 
-            // This delegate is the ONLY code that touches the RhinoDoc. We marshal
-            // it onto Rhino's UI thread; see the class remarks for the rationale.
             void AddToDocument()
             {
                 try
                 {
-                    objectCount = AddJoinedObjects(doc, joined);
+                    objectCount = AddJoinedObjects(doc, joined, rootLayerName);
                 }
                 catch (Exception ex)
                 {
-                    // Capture and rethrow on the calling thread so the caller's
-                    // try/catch (and the dialog's error reporting) still works.
                     docError = ex;
                 }
             }
 
-            // InvokeOnUiThread blocks until the delegate completes. If we are already
-            // on the UI thread it executes synchronously in place.
             RhinoApp.InvokeOnUiThread((Action)AddToDocument);
 
             if (docError is not null)
@@ -213,13 +222,13 @@ namespace IfcLiteImporter.Rhino.Import
 
         /// <summary>
         /// Adds every joined object to the document on the correct per-IfcType
-        /// layer, baking the IFC metadata as user strings. Runs on the UI thread.
+        /// layer, nesting them under the file's root layer and baking the IFC metadata.
+        /// Runs on the UI thread.
         /// </summary>
-        private static int AddJoinedObjects(RhinoDoc doc, IReadOnlyList<JoinedObject> joined)
+        private static int AddJoinedObjects(RhinoDoc doc, IReadOnlyList<JoinedObject> joined, string rootLayerName)
         {
             int count = 0;
 
-            // Cache layer lookups so we only create each IfcType layer once.
             var layerCache = new Dictionary<string, int>(StringComparer.Ordinal);
 
             foreach (JoinedObject obj in joined)
@@ -227,21 +236,17 @@ namespace IfcLiteImporter.Rhino.Import
                 if (obj.Mesh is null || obj.Mesh.Faces.Count == 0)
                     continue;
 
-                // Resolve (creating if needed) the layer for this object's IfcType.
                 if (!layerCache.TryGetValue(obj.IfcType, out int layerIndex))
                 {
-                    layerIndex = LayerHelper.GetOrCreateIfcTypeLayer(doc, obj.IfcType);
+                    layerIndex = LayerHelper.GetOrCreateIfcTypeLayer(doc, obj.IfcType, rootLayerName);
                     layerCache[obj.IfcType] = layerIndex;
                 }
 
                 var attr = new ObjectAttributes { LayerIndex = layerIndex };
 
-                // Give the object a friendly name when one is available.
                 if (!string.IsNullOrEmpty(obj.Representative.Name))
                     attr.Name = obj.Representative.Name;
 
-                // Bake IFC metadata (type, ids, properties, …) as user strings so it
-                // round-trips with the geometry and is queryable in Rhino.
                 UserStringBaker.Bake(attr, obj.Representative);
 
                 Guid id = doc.Objects.AddMesh(obj.Mesh, attr);
@@ -251,13 +256,26 @@ namespace IfcLiteImporter.Rhino.Import
 
             return count;
         }
+
+        /// <summary>
+        /// Converts an RGB(A) float quad in [0,1] to a <see cref="System.Drawing.Color"/>.
+        /// </summary>
+        private static System.Drawing.Color FloatColorToArgb(float[] rgba)
+        {
+            byte ToByte(float f) => (byte)Math.Round((f < 0f ? 0f : (f > 1f ? 1f : f)) * 255f);
+            byte r = ToByte(rgba[0]);
+            byte g = ToByte(rgba[1]);
+            byte b = ToByte(rgba[2]);
+            byte a = rgba.Length >= 4 ? ToByte(rgba[3]) : (byte)255;
+            return System.Drawing.Color.FromArgb(a, r, g, b);
+        }
     }
 
     /// <summary>
     /// A converted Rhino mesh paired with the source <see cref="IfcMesh"/> it came
     /// from, so later stages can read the original IFC metadata.
     /// </summary>
-    internal readonly struct BuiltMesh
+    public readonly struct BuiltMesh
     {
         public BuiltMesh(Mesh mesh, IfcMesh source)
         {

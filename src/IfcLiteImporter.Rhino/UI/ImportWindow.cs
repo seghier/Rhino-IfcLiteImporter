@@ -44,6 +44,7 @@ namespace IfcLiteImporter.Rhino.UI
         private readonly Button _importButton;
         private readonly Button _closeButton;
 
+
         // ---- Import state -------------------------------------------------------
         private CancellationTokenSource? _cts;
         private bool _isImporting;
@@ -187,7 +188,68 @@ namespace IfcLiteImporter.Rhino.UI
         // ----------------------------------------------------------------------
         // Event handlers
         // ----------------------------------------------------------------------
+        private async void OnImportButtonClick(object sender, EventArgs e)
+        {
+            _cts = new CancellationTokenSource();
+            _importButton.Enabled = false;
 
+            // 1. Prepare options and document context
+            RhinoDoc doc = RhinoDoc.ActiveDoc;
+            string path = "path_to_your_file.ifc";
+            var options = new ImportOptions { /* options */ };
+
+            // 2. Initialize native Status Bar progress meter
+            bool progressMeterVisible = false;
+            var progress = new Progress<ImportProgress>(value =>
+            {
+                if (!progressMeterVisible)
+                {
+                    global::Rhino.UI.StatusBar.ShowProgressMeter(0, 100, "Importing IFC...", true, true);
+                    progressMeterVisible = true;
+                }
+                global::Rhino.UI.StatusBar.UpdateProgressMeter(value.Percent, true);
+
+                // You can also update a ProgressBar directly on your Eto dialog here:
+                // myEtoProgressBar.Value = value.Percent;
+            });
+
+            try
+            {
+                var service = new IfcImportService();
+
+                // 3. Await Task.Run. The await keyword yields execution back to the 
+                // Eto and Rhino message loops. Rhino's viewport remains fully interactive.
+                ImportResult result = await Task.Run(() =>
+                    service.Import(doc, path, options, progress, _cts.Token)
+                );
+
+                RhinoApp.WriteLine($"Successfully imported {result.ObjectCount} objects.");
+                doc.Views.Redraw();
+            }
+            catch (OperationCanceledException)
+            {
+                RhinoApp.WriteLine("Import cancelled.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Import failed: {ex.Message}", MessageBoxType.Error);
+            }
+            finally
+            {
+                if (progressMeterVisible)
+                {
+                    global::Rhino.UI.StatusBar.HideProgressMeter();
+                }
+                _importButton.Enabled = true;
+                _cts.Dispose();
+                _cts = null;
+            }
+        }
+
+        private void OnCancelButtonClick(object sender, EventArgs e)
+        {
+            _cts?.Cancel();
+        }
         private void OnBrowse()
         {
             using var dialog = new OpenFileDialog

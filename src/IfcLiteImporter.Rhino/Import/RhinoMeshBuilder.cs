@@ -158,7 +158,8 @@ namespace IfcLiteImporter.Rhino.Import
         /// </summary>
         private static System.Drawing.Color FloatColorToArgb(float[] rgba)
         {
-            byte ToByte(float f) => (byte)Math.Round(Math.Clamp(f, 0f, 1f) * 255f);
+            // Replaced Math.Clamp to ensure standard .NET Framework compatibility
+            byte ToByte(float f) => (byte)Math.Round((f < 0f ? 0f : (f > 1f ? 1f : f)) * 255f);
             byte r = ToByte(rgba[0]);
             byte g = ToByte(rgba[1]);
             byte b = ToByte(rgba[2]);

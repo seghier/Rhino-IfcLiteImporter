@@ -3,18 +3,20 @@
 using System;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks; // Added
 using IfcLite.Net;
 using IfcLiteImporter.Rhino.Import;
 using Rhino;
 using Rhino.Commands;
+using Rhino.Input.Custom; // Added for GetCancel
 
 namespace IfcLiteImporter.Rhino.Commands
 {
     /// <summary>
     /// The headless command. Running <c>IfcLiteImport</c> prompts for an
-    /// <c>.ifc</c> file and imports it synchronously with default options
-    /// (project coordinates, join-by-properties), writing progress to the command
-    /// line. Handy for scripting and macros where no dialog is wanted.
+    /// <c>.ifc</c> file and imports it asynchronously using Rhino's GetCancel,
+    /// showing progress in the native status bar and keeping viewports completely
+    /// responsive for navigation and rotation.
     /// </summary>
     public sealed class IfcLiteImportCommand : Command
     {
@@ -43,43 +45,99 @@ namespace IfcLiteImporter.Rhino.Commands
                 return Result.Failure;
             }
 
-            // Default options match the dialog's defaults.
             var options = new ImportOptions
             {
                 CoordinateMode = CoordinateMode.Project,
                 OpeningFilterMode = OpeningFilterMode.Default,
                 JoinByProperties = true,
+                MergeCoplanarFaces = true,
             };
 
-            // Mirror progress to the command line. Progress<T> would post to a
-            // captured synchronization context; here we run synchronously and want
-            // each update printed immediately, so use a direct sink instead.
-            var progress = new ConsoleProgress();
+            // Instantiate Rhino's GetCancel to manage the non-blocking wait loop
+            var gc = new GetCancel();
+            gc.SetCommandPrompt("Importing IFC file... Press ESC to cancel");
+
+            bool progressMeterVisible = false;
+
+            // Progress<T> automatically captures the SynchronizationContext of the UI thread,
+            // making UI-bound progress meter updates completely safe.
+            var progress = new Progress<ImportProgress>(value =>
+            {
+                if (!progressMeterVisible)
+                {
+                    // Initialize the built-in progress bar
+                    global::Rhino.UI.StatusBar.ShowProgressMeter(0, 100, "Importing IFC...", true, true);
+                    progressMeterVisible = true;
+                }
+                global::Rhino.UI.StatusBar.UpdateProgressMeter(value.Percent, true);
+                RhinoApp.SetCommandPrompt($"Importing IFC: {value.Percent}% - {value.Status}");
+            });
 
             try
             {
                 RhinoApp.WriteLine($"IfcLiteImport: importing {Path.GetFileName(path)}…");
 
                 var service = new IfcImportService();
-                // This command runs on Rhino's UI thread, so the service's
-                // RhinoApp.InvokeOnUiThread call simply executes in place.
-                ImportResult result = service.Import(doc, path, options, progress, CancellationToken.None);
 
-                RhinoApp.WriteLine(
-                    $"IfcLiteImport: added {result.ObjectCount} objects from {result.MeshCount} meshes " +
-                    $"({result.SchemaVersion}) in {result.ElapsedMs} ms.");
+                // Run parsing, conversion, grouping, and merging on a background thread.
+                // Pass gc.Token so pressing ESC cancels operations instantly.
+                Task<ImportResult> importTask = Task.Run(() =>
+                    service.Import(doc, path, options, progress, gc.Token)
+                );
 
-                doc.Views.Redraw();
-                return Result.Success;
+                // Wait for completion. This pumps messages, keeping viewports, 
+                // mouse navigation, and redraws fully active.
+                Result waitResult = gc.Wait(importTask, doc);
+
+                // Clean up the status bar progress meter
+                if (progressMeterVisible)
+                {
+                    global::Rhino.UI.StatusBar.HideProgressMeter();
+                    progressMeterVisible = false;
+                }
+
+                if (waitResult == Result.Cancel)
+                {
+                    RhinoApp.WriteLine("IfcLiteImport: cancelled.");
+                    return Result.Cancel;
+                }
+
+                if (waitResult == Result.Success)
+                {
+                    // Retrieve result safely once task is complete
+                    ImportResult result = importTask.Result;
+
+                    RhinoApp.WriteLine(
+                        $"IfcLiteImport: added {result.ObjectCount} objects from {result.MeshCount} meshes " +
+                        $"({result.SchemaVersion}) in {result.ElapsedMs} ms.");
+
+                    doc.Views.Redraw();
+                    return Result.Success;
+                }
+
+                // If waitResult is Failure and the task faulted, propagate the exception 
+                // to be parsed and printed by the try-catch block.
+                if (waitResult == Result.Failure && importTask.IsFaulted && importTask.Exception is not null)
+                {
+                    throw importTask.Exception;
+                }
+
+                return waitResult;
             }
-            catch (OperationCanceledException)
+            catch (AggregateException aggEx)
             {
-                RhinoApp.WriteLine("IfcLiteImport: cancelled.");
-                return Result.Cancel;
-            }
-            catch (IfcLiteException ex)
-            {
-                RhinoApp.WriteLine($"IfcLiteImport failed: {ex.Message} (code {ex.ErrorCode})");
+                Exception inner = aggEx.InnerException ?? aggEx;
+                if (inner is OperationCanceledException)
+                {
+                    RhinoApp.WriteLine("IfcLiteImport: cancelled.");
+                    return Result.Cancel;
+                }
+                if (inner is IfcLiteException ex)
+                {
+                    RhinoApp.WriteLine($"IfcLiteImport failed: {ex.Message} (code {ex.ErrorCode})");
+                    return Result.Failure;
+                }
+                RhinoApp.WriteLine($"IfcLiteImport failed: {inner.Message}");
                 return Result.Failure;
             }
             catch (Exception ex)
@@ -87,23 +145,12 @@ namespace IfcLiteImporter.Rhino.Commands
                 RhinoApp.WriteLine($"IfcLiteImport failed: {ex.Message}");
                 return Result.Failure;
             }
-        }
-
-        /// <summary>
-        /// A trivial <see cref="IProgress{T}"/> that prints each update straight to
-        /// the Rhino command line. Used by the synchronous command path.
-        /// </summary>
-        private sealed class ConsoleProgress : IProgress<ImportProgress>
-        {
-            private int _lastPercent = -1;
-
-            public void Report(ImportProgress value)
+            finally
             {
-                // Avoid spamming identical percentages.
-                if (value.Percent == _lastPercent)
-                    return;
-                _lastPercent = value.Percent;
-                RhinoApp.WriteLine($"  [{value.Percent,3}%] {value.Status}");
+                if (progressMeterVisible)
+                {
+                    global::Rhino.UI.StatusBar.HideProgressMeter();
+                }
             }
         }
     }

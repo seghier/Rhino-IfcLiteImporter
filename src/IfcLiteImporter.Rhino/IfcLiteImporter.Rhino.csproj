@@ -13,7 +13,7 @@
   -->
 
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
 
@@ -39,14 +39,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Grasshopper\**" />
+    <EmbeddedResource Remove="Grasshopper\**" />
+    <None Remove="Grasshopper\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
       RhinoCommon is the public Rhino API. ExcludeAssets="runtime" means we
       compile against it but do NOT copy RhinoCommon.dll to our output — Rhino
       already has it loaded.
     -->
-    <PackageReference Include="RhinoCommon" Version="8.*" ExcludeAssets="runtime" />
+    <PackageReference Include="RhinoCommon" Version="8.32.26160.13001" ExcludeAssets="runtime" />
     <!-- Eto.Forms is the cross-platform UI toolkit Rhino ships and hosts. -->
-    <PackageReference Include="Eto.Forms" Version="2.8.*" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
@@ -61,9 +66,7 @@
       simply shows nothing if the resource is absent (see ImportWindow.cs).
       Condition="Exists(...)" keeps the build green when the file is not present yet.
     -->
-    <EmbeddedResource Include="Resources\link-logo.png"
-                      LogicalName="IfcLiteImporter.Rhino.Resources.link-logo.png"
-                      Condition="Exists('Resources\link-logo.png')" />
+    <EmbeddedResource Include="Resources\link-logo.png" LogicalName="IfcLiteImporter.Rhino.Resources.link-logo.png" Condition="Exists('Resources\link-logo.png')" />
   </ItemGroup>
 
 </Project>

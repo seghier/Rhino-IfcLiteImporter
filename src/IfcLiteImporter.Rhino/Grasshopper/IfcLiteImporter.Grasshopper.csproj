@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Target .NET 8 to match your Rhino 8 plug-in project -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Grasshopper plug-ins are loaded into collectible AssemblyLoadContexts in Rhino 8 -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    
+    <!-- Forces MSBuild to output a .gha file instead of a .dll -->
+    <TargetExt>.gha</TargetExt>
+
+    <!-- Suppress the .NET Framework packages restore warning (NU1701) just like Rhino project -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+
+    <AssemblyName>IfcLiteImporter.Grasshopper</AssemblyName>
+    <RootNamespace>IfcLiteImporter.Grasshopper</RootNamespace>
+    <Description>Grasshopper 8 components for importing IFC files using IfcLite.</Description>
+    <Authors>LINK Arkitektur</Authors>
+    <Company>LINK Arkitektur</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 
+      Reference Grasshopper and RhinoCommon. ExcludeAssets="runtime" ensures 
+      we compile against them but do NOT copy them to our output folder, 
+      since Rhino already has them loaded.
+    -->
+    <PackageReference Include="Grasshopper" Version="8.32.26160.13001" ExcludeAssets="runtime" />
+    <PackageReference Include="RhinoCommon" Version="8.32.26160.13001" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IfcLiteImporter.Rhino.csproj" />
+  </ItemGroup>
+
+  <!-- Auto-deploys the compiled .gha to your local Grasshopper Libraries folder on build -->
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(OS)' == 'Windows_NT'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(APPDATA)\Grasshopper\Libraries" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(APPDATA)\Grasshopper\Libraries" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+
+</Project>
